@@ -50,7 +50,7 @@
                         (list "--user" (concatenate 'string ":" +api-token+)
                               "-X" "POST"
                               "-H" "Content-Type: application/json"
-                              "-d" str
+                              "-d" (format nil "~a" str)
                               "https://davar.icfpcontest.org/teams/22/solutions"))))
 
 (defun initialize-board ()
@@ -121,7 +121,8 @@
                  (cond ((and (= dx -1) (oddp y))
                         (list x (1+ y)))
                        ((and (= dx 1) (evenp y))
-                        (list x (1+ y))))
+                        (list x (1+ y)))
+                       (t (list (+ x dx) (1+ y))))
                  (list (+ x dx) y)))))
     (list (translate (pivot unit))
           (mapcar #'translate (members unit)))))
@@ -196,13 +197,40 @@
   t)
 
 (defun spawn-unit (k)
-  (setf *current* (elt *units* k))
+  "Returns NIL if the game ends."
+  (setf *current* (elt *units* (mod k (length *units*))))
   (when (placeablep *current*)
     (place-current)
     t))
 
+(defun solve-current ()
+  (let ((e (move-unit-e *current*))
+        (sw (move-unit-sw *current*))
+        (se (move-unit-se *current*)))
+    (cond ((placeablep e)
+           (remove-current)
+           (setf *current* e)
+           (place-current)
+           (cons 'e (solve-current)))
+          ((placeablep sw)
+           (remove-current)
+           (setf *current* sw)
+           (place-current)
+           (cons 'sw (solve-current)))
+          ((placeablep se)
+           (remove-current)
+           (setf *current* se)
+           (place-current)
+           (cons 'se (solve-current)))
+          (t (lock-current)
+             '(sw)))))
+
 (defun solve (source)
-  (initialize-board))
+  (initialize-board)
+  (generate-power-commands
+   (iter (for next in source)
+         (while (spawn-unit next))
+         (appending (solve-current)))))
 
 
 ;;; Visualization
@@ -230,13 +258,13 @@
   (initialize (read-problem (format nil "problems/problem_~a.json" n)))
   (initialize-board))
 
-(defun run-file (filename &optional sendp)
+(defun run-file (filename &optional sendp tag)
   (initialize (read-problem filename))
-  (let* ((seeds (car (assoc :source-seeds *problem*)))
-         (length (car (assoc :source-length *problem*)))
+  (let* ((seeds (cdr (assoc :source-seeds *problem*)))
+         (length (cdr (assoc :source-length *problem*)))
          (solutions (iter (for seed in seeds)
                           (for source = (generate-source seed length))
                           (collect (solve source)))))
     (if sendp
-        (send-solutions (cdr (assoc :id *problem*)) seeds solutions)
-        (encode-solutions *standard-output* (cdr (assoc :id *problem*)) seeds solutions))))
+        (send-solutions (cdr (assoc :id *problem*)) seeds solutions tag)
+        (encode-solutions *standard-output* (cdr (assoc :id *problem*)) seeds solutions tag))))
