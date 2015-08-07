@@ -1,0 +1,242 @@
+(in-package :icfp2015)
+
+;;; Global variables
+
+(defvar *problem*)                      ; JSON data
+(defvar *width*)
+(defvar *height*)
+(defvar *board*)                        ; two-dimensional array
+(defvar *units*)                        ; internal storage: ((pivot-x pivot-y) ((x y) (x y) ...))
+(defvar *current*)                      ; current unit
+
+(defparameter *phrases-of-power*
+  '("Ei!" "Ia! Ia!" "R'lyeh" "Yuggoth"))
+
+;;; Constants
+
+(defparameter +api-token+ "g+1iBwAdnx5tGoHEAdObMHGEQG+4AFZ9DWkpM6UuFbU=")
+(defparameter +command-code+
+  '((w   #\p #\' #\! #\. #\0 #\3)
+    (e   #\b #\c #\e #\f #\y #\2)
+    (sw  #\a #\g #\h #\i #\j #\4)
+    (se  #\l #\m #\n #\o #\  #\5)
+    (rc  #\d #\q #\r #\v #\z #\1)
+    (rcc #\k #\s #\t #\u #\w #\x)))
+
+
+;;; Input/Output
+
+(defun read-problem (filename)
+  (cl-json:decode-json-from-string (read-file-into-string filename)))
+
+(defun package-solution (id seed solution &optional tag)
+  `((:problem-id . ,id)
+    (:seed . ,seed)
+    ,@(when tag `((:tag . ,tag)))
+    (:solution . ,solution)))
+
+(defun encode-solutions (stream id seeds solutions &optional tag)
+  (cl-json:encode-json
+   (coerce (iter (for seed in seeds)
+                 (for solution in solutions)
+                 (collect (package-solution id seed solution tag)))
+           'vector)
+   stream))
+
+(defun send-solutions (id seeds solutions &optional tag)
+  (let ((str (with-output-to-string (s)
+               (encode-solutions s id seeds solutions tag))))
+    (sb-ext:run-program "/usr/bin/curl"
+                        (list "--user" (concatenate 'string ":" +api-token+)
+                              "-X" "POST"
+                              "-H" "Content-Type: application/json"
+                              "-d" str
+                              "https://davar.icfpcontest.org/teams/22/solutions"))))
+
+(defun initialize-board ()
+  (setf *board* (make-array (list *width* *height*)
+                            :initial-element 'empty))
+  (dolist (xy (cdr (assoc :filled *problem*)))
+    (setf (aref *board* (cdr (assoc :x xy)) (cdr (assoc :y xy)))
+          'filled)))
+
+(defun place-unit (pivot members)
+  "Translates the unit to its spawning position."
+  (let* ((min-x *width*)
+         (max-x 0)
+         (min-y *height*))
+    (iter (for (x y) in members)
+          (when (< x min-x)
+            (setf min-x x))
+          (when (> x max-x)
+            (setf max-x x))
+          (when (< y min-y)
+            (setf min-y y)))
+    (let* ((w (- max-x min-x -1))
+           (left (floor (- *width* w) 2))
+           (by (list (- left min-x) (- min-y))))
+      (flet ((translate (p) (list (+ (first p) (first by)) (+ (second p) (second by)))))
+        (list (translate pivot) (mapcar #'translate members))))))
+
+(defun initialize (problem)
+  (setf *problem* problem)
+  (setf *width* (cdr (assoc :width *problem*)))
+  (setf *height* (cdr (assoc :height *problem*)))
+  (flet ((cell (xy) (list (cdr (assoc :x xy)) (cdr (assoc :y xy)))))
+    (setf *units*
+          (coerce (iter (for unit in (cdr (assoc :units problem)))
+                        (collect (place-unit (cell (cdr (assoc :pivot unit)))
+                                             (mapcar #'cell (cdr (assoc :members unit))))))
+                  'vector)))
+  t)
+
+
+;;; Source generation
+
+(defun generate-source (seed length)
+  (iter (repeat length)
+        (for next first seed then (logand (+ (* next 1103515245) 12345) #.(1- (expt 2 32))))
+        (collect (ash (logand next #.(1- (expt 2 31))) -16))))
+
+
+;;; Power command generation
+
+(defun generate-power-commands (commands)
+  "For the lightning round, this will be just random."
+  (with-output-to-string (s)
+    (dolist (cmd commands)
+      (format s "~a" (random-elt (cdr (assoc cmd +command-code+)))))))
+
+
+;;; Gameplay
+
+(defun pivot (unit) (first unit))
+(defun members (unit) (second unit))
+
+(defun move-unit (unit dx dy)
+  (flet ((translate (p)
+           (let ((x (first p))
+                 (y (second p)))
+             (if (= dy 1)
+                 (cond ((and (= dx -1) (oddp y))
+                        (list x (1+ y)))
+                       ((and (= dx 1) (evenp y))
+                        (list x (1+ y))))
+                 (list (+ x dx) y)))))
+    (list (translate (pivot unit))
+          (mapcar #'translate (members unit)))))
+
+(defun move-unit-w (unit) (move-unit unit -1 0))
+(defun move-unit-e (unit) (move-unit unit 1 0))
+(defun move-unit-sw (unit) (move-unit unit -1 1))
+(defun move-unit-se (unit) (move-unit unit 1 1))
+
+(defun directions (from to)
+  (if (equal from to)
+      '()
+      (destructuring-bind ((x1 y1) (x2 y2))
+          (list from to)
+        (if (= y1 y2)
+            (make-list (abs (- x2 x1)) :initial-element (if (< x1 x2) 'e 'w))
+            (let ((dir (if (< y1 y2)
+                           (if (< x1 x2) 'se 'sw)
+                           (if (< x1 x2) 'ne 'nw))))
+              (cons dir (directions (walk from (list dir)) to)))))))
+
+(defun walk (from dirs)
+  (if (null dirs)
+      from
+      (let* ((x (first from))
+             (y (second from))
+             (odd (oddp y)))
+        (walk (ecase (first dirs)
+                (ne (list (if odd (1+ x) x) (1- y)))
+                (e (list (1+ x) y))
+                (se (list (if odd (1+ x) x) (1+ y)))
+                (sw (list (if odd x (1- x)) (1+ y)))
+                (w (list (1- x) y))
+                (nw (list (if odd x (1- x)) (1- y))))
+              (rest dirs)))))
+
+(defun rotate-unit (unit clockwisep)
+  (let ((pivot (pivot unit))
+        (dirs (if clockwisep
+                  '(ne e se sw w nw ne)
+                  '(ne nw w sw se e ne))))
+    (labels ((next-dir (dir) (cadr (member dir dirs)))
+             (rotate-point (p) (walk pivot (mapcar #'next-dir (directions pivot p)))))
+      (list pivot
+            (mapcar #'rotate-point (members unit))))))
+
+(defun rotate-unit-clockwise (unit) (rotate-unit unit t))
+(defun rotate-unit-counter-clockwise (unit) (rotate-unit unit nil))
+
+(defun placeablep (unit)
+  (iter (for (x y) in (members unit))
+        (when (or (< x 0) (>= x *width*)
+                  (< y 0) (>= y *height*)
+                  (eq (aref *board* x y) 'filled))
+          (return-from placeablep nil)))
+  t)
+
+(defun place-current ()
+  (iter (for (x y) in (members *current*))
+        (setf (aref *board* x y)
+              'moving)))
+
+(defun remove-current ()
+  (iter (for (x y) in (members *current*))
+        (setf (aref *board* x y)
+              'empty)))
+
+(defun lock-current ()
+  (iter (for (x y) in (members *current*))
+        (setf (aref *board* x y)
+              'filled))
+  t)
+
+(defun spawn-unit (k)
+  (setf *current* (elt *units* k))
+  (when (placeablep *current*)
+    (place-current)
+    t))
+
+(defun solve (source)
+  (initialize-board))
+
+
+;;; Visualization
+
+(defun write-ps-header (stream)
+  (let ((size (max *width* *height*))
+        (header (read-file-into-string "honeycomb.eps")))
+    (format stream "~a/size ~f def~%" header (/ 500 (sqrt 3) (1+ size)))))
+
+(defun write-ps-board (stream)
+  (format stream "~{~{~(~a~)~^ ~}~%~}showpage~%"
+          (iter (for i from 0 below *width*)
+                (appending (iter (for j from 0 below *height*)
+                                 (collect (list i j (aref *board* i j))))))))
+
+(defun write-ps (filename)
+  (with-open-file (s filename :direction :output :if-exists :supersede)
+    (write-ps-header s)
+    (write-ps-board s)))
+
+
+;;; Main program - command line parameters etc.
+
+(defun load-problem (n)
+  (initialize (read-problem (format nil "problems/problem_~a.json" n)))
+  (initialize-board))
+
+(defun run-file (filename &optional sendp)
+  (initialize (read-problem filename))
+  (let* ((seeds (car (assoc :source-seeds *problem*)))
+         (length (car (assoc :source-length *problem*)))
+         (solutions (iter (for seed in seeds)
+                          (for source = (generate-source seed length))
+                          (collect (solve source)))))
+    (if sendp
+        (send-solutions (cdr (assoc :id *problem*)) seeds solutions)
+        (encode-solutions *standard-output* (cdr (assoc :id *problem*)) seeds solutions))))

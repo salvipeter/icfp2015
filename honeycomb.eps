@@ -1,0 +1,34 @@
+%!PS-Adobe-2.0
+%%Creator: Peter Salvi (2015.08.07.)
+%%Title: ICFP 2015 honeycomb visualization
+%%BoundingBox: 0 0 500 500
+%%EndComments
+
+/sqrt3 3 sqrt def
+
+/hex {
+    /yold exch def
+    yold 1.5 mul size mul 500 size sub exch sub /y exch def
+    yold 2 mod 1 eq { 1.5 add } { 1 add } ifelse
+    sqrt3 mul size mul /x exch def
+    x sqrt3 size mul 0.5 mul sub y size 0.5 mul sub moveto
+    x y size sub lineto
+    x sqrt3 size mul 0.5 mul add y size 0.5 mul sub lineto
+    x sqrt3 size mul 0.5 mul add y size 0.5 mul add lineto
+    x y size add lineto
+    x sqrt3 size mul 0.5 mul sub y size 0.5 mul add lineto
+    closepath
+} def
+
+/filled {
+    hex gsave 0.5 setgray fill grestore stroke
+} def
+
+/empty {
+    hex stroke
+} def
+
+/moving {
+    hex gsave 0.8 setgray fill grestore stroke
+} def
+
