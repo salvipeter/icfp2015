@@ -8,6 +8,7 @@
 (defvar *board*)                        ; two-dimensional array
 (defvar *units*)                        ; internal storage: ((pivot-x pivot-y) ((x y) (x y) ...))
 (defvar *current*)                      ; current unit
+(defvar *ps-stream*)
 
 (defparameter *phrases-of-power*
   '("Ei!" "Ia! Ia!" "R'lyeh" "Yuggoth"))
@@ -190,10 +191,33 @@
         (setf (aref *board* x y)
               'empty)))
 
+(defun full-row-p (row)
+  (iter (for i from 0 below *width*)
+        (unless (eq (aref *board* i row) 'filled)
+          (return-from full-row-p nil)))
+  t)
+
+(defun move-down-to (row)
+  (iter (for y from (1- row) downto 0)
+        (iter (for x from 0 below *width*)
+              (setf (aref *board* x (1+ y))
+                    (aref *board* x y))))
+  (iter (for x from 0 below *width*)
+        (setf (aref *board* x 0) 'empty)))
+
+(defun delete-full-rows (from)
+  (when (>= from 0)
+    (if (full-row-p from)
+        (progn
+          (move-down-to from)
+          (delete-full-rows from))
+        (delete-full-rows (1- from)))))
+
 (defun lock-current ()
   (iter (for (x y) in (members *current*))
         (setf (aref *board* x y)
               'filled))
+  (delete-full-rows (1- *height*))
   t)
 
 (defun spawn-unit (k)
@@ -204,6 +228,7 @@
     t))
 
 (defun solve-current ()
+  (write-ps-board *ps-stream*)
   (let ((e (move-unit-e *current*))
         (sw (move-unit-sw *current*))
         (se (move-unit-se *current*)))
@@ -227,10 +252,12 @@
 
 (defun solve (source)
   (initialize-board)
-  (generate-power-commands
-   (iter (for next in source)
-         (while (spawn-unit next))
-         (appending (solve-current)))))
+  (with-open-file (*ps-stream* "/tmp/test.eps" :direction :output :if-exists :supersede)
+    (write-ps-header *ps-stream*)
+    (generate-power-commands
+     (iter (for next in source)
+           (while (spawn-unit next))
+           (appending (solve-current))))))
 
 
 ;;; Visualization
