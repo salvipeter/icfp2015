@@ -8,7 +8,8 @@
 (defvar *board*)                        ; two-dimensional array
 (defvar *units*)                        ; internal storage: ((pivot-x pivot-y) ((x y) (x y) ...))
 (defvar *current*)                      ; current unit
-(defvar *ps-stream*)
+
+(defvar *ps-stream* nil)
 
 (defparameter *phrases-of-power*
   '("Ei!" "Ia! Ia!" "R'lyeh" "Yuggoth"))
@@ -35,6 +36,11 @@
     (:seed . ,seed)
     ,@(when tag `((:tag . ,tag)))
     (:solution . ,solution)))
+
+(defun package-solutions (id seeds solutions)
+  (iter (for seed in seeds)
+        (for solution in solutions)
+        (collect (package-solution id seed solution))))
 
 (defun encode-solutions (stream id seeds solutions &optional tag)
   (cl-json:encode-json
@@ -228,7 +234,8 @@
     t))
 
 (defun solve-current ()
-  (write-ps-board *ps-stream*)
+  (when *ps-stream*
+    (write-ps-board *ps-stream*))
   (let ((e (move-unit-e *current*))
         (sw (move-unit-sw *current*))
         (se (move-unit-se *current*)))
@@ -252,12 +259,12 @@
 
 (defun solve (source)
   (initialize-board)
-  (with-open-file (*ps-stream* "/tmp/test.eps" :direction :output :if-exists :supersede)
-    (write-ps-header *ps-stream*)
-    (generate-power-commands
-     (iter (for next in source)
-           (while (spawn-unit next))
-           (appending (solve-current))))))
+  (when *ps-stream*
+    (write-ps-header *ps-stream*))
+  (generate-power-commands
+   (iter (for next in source)
+         (while (spawn-unit next))
+         (appending (solve-current)))))
 
 
 ;;; Visualization
@@ -294,4 +301,16 @@
                           (collect (solve source)))))
     (if sendp
         (send-solutions (cdr (assoc :id *problem*)) seeds solutions tag)
-        (encode-solutions *standard-output* (cdr (assoc :id *problem*)) seeds solutions tag))))
+        (package-solutions (cdr (assoc :id *problem*)) seeds solutions))))
+
+(defun main ()
+  (let ((n (length sb-ext:*posix-argv*))
+        (files '()))
+    (iter (for i from 1 to n by 2)
+          (when (string= (elt sb-ext:*posix-argv* i) "-f")
+            (collect (elt sb-ext:*posix-argv* (1+ i)))))
+    (when (null files)
+      (format *error-output* "Usage: ~a -f <filename>~%Other options are ignored.~%"
+              (first sb-ext:*posix-argv*)))
+    (cl-json:encode-json (coerce (iter (for file in files) (collect (run-file file))) 'vector)
+                         *standard-output*)))
