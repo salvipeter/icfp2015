@@ -5,3 +5,4 @@ syntax: glob
 .\#*
 *.fasl
 */*
+play_icfp2015

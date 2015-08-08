@@ -5,18 +5,22 @@ Programming language: Common Lisp (SBCL)
 
 Algorithm
 ---------
-This is a very simple, random algorithm.
-There is a state, that defines the general direction (east or west)
-Then in every move, we do the first valid move of the following list:
+This is a very simple, partly random algorithm.
+There is a state, that defines the general direction (east or west).
+Units are handled one by one, without any foresight.
 
-1. Rotation (try randomly clockwise or counter-clockwise first).
+In every move, we do the first valid move of the following list:
+
+1. Move in the general direction (if we didn't go in the other direction in the last step).
+2. Move downwards (try randomly southwest or southeast first).
+3. Move opposite to the general direction (if we didn't go in the other direction in the last step).
+4. Rotation (try randomly clockwise or counter-clockwise first).
    A rotation is only applied if it makes the unit thinner.
-2. Move in the general direction.
-3. Move downwards (try randomly southwest or southeast first).
-4. Move in the opposite of the general direction.
 
 If none of these succeeded, lock the unit.
 If the top member of this unit is in the first 3 rows, then change the general direction.
+
+Characters for commands are chosen randomly, no power phrase heuristic is applied.
 
 Running inside lisp & visualization
 -----------------------------------
