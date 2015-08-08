@@ -274,10 +274,10 @@
                    (place-current))
                  (if clockwisep 'rc 'rcc)))))
       (let ((next (or (try-rotation t)
-                      (try-rotation nil)
-                      (and (not (eq last (if go-east 'w 'e))) (try-movement (if go-east 'e 'w)))
+                      (try-rotation nil) 
                       (try-movement (if go-east 'sw 'se))
                       (try-movement (if go-east 'se 'sw))
+                      (and (not (eq last (if go-east 'w 'e))) (try-movement (if go-east 'e 'w)))
                       (and (not (eq last (if go-east 'e 'w))) (try-movement (if go-east 'w 'e))))))
         (cond (next (setf last next)
                     (cons next (solve-current)))
@@ -288,8 +288,6 @@
 
 (defun solve (source)
   (initialize-board)
-  (when *ps-stream*
-    (write-ps-header *ps-stream*))
   (generate-power-commands
    (iter (for next in source)
          (while (spawn-unit next))
@@ -323,6 +321,9 @@
 
 (defun run-file (filename &optional sendp tag)
   (initialize (read-problem filename))
+  (when *ps-stream*
+    (initialize-board)
+    (write-ps-header *ps-stream*))
   (let* ((seeds (cdr (assoc :source-seeds *problem*)))
          (length (cdr (assoc :source-length *problem*)))
          (solutions (iter (for seed in seeds)
