@@ -273,7 +273,7 @@
                  (when *ps-stream*
                    (place-current))
                  (if clockwisep 'rc 'rcc)))))
-      (let ((next (or (let (rot-order (shuffle '(t nil)))
+      (let ((next (or (let ((rot-order (shuffle '(t nil))))
                         (or (try-rotation (first rot-order))
                             (try-rotation (second rot-order)))) 
                       (and (not (eq last (if go-east 'w 'e))) (try-movement (if go-east 'e 'w)))
